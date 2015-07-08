@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- App name  and other strings-->
-    <string name="app_name">ShareDrive</string>
-    <string name="account_type">owncloud</string>	<!-- better if was a domain name; but changing it now would require migrate accounts when the app is updated -->
-    <string name="authority">org.owncloud</string>	<!-- better if was the app package with ".provider" appended ; it identifies the provider -->
-    <string name ="db_file">owncloud.db</string>
-    <string name ="db_name">ownCloud</string>
-    <string name ="data_folder">owncloud</string>
-    <string name ="log_name">Owncloud_</string>
-    <string name ="default_display_name_for_root_folder">ShareDrive</string>
-    <string name ="user_agent">Mozilla/5.0 (Android) ownCloud-android/%1$s</string>
+    <string name="app_name">Share Drive</string>
+    <string name="account_type">sharedrive</string>	<!-- better if was a domain name; but changing it now would require migrate accounts when the app is updated -->
+    <string name="authority">us.telesystem</string>	<!-- better if was the app package with ".provider" appended ; it identifies the provider -->
+    <string name ="db_file">sharedrive.db</string>
+    <string name ="db_name">shareDrive</string>
+    <string name ="data_folder">sharedrive</string>
+    <string name ="log_name">ShareDrive</string>
+    <string name ="default_display_name_for_root_folder">Share Drive</string>
+    <string name ="user_agent">Mozilla/5.0 (Android) telesystem-sharedrive/%1$s</string>
     
     <!-- URLs and flags related -->
     <string name="server_url">https://sharedrive.mytelesystem.com</string>
     <bool name="show_server_url_input">false</bool>
     <bool name="show_welcome_link">true</bool>
-	<string name="welcome_link_url">"http:/telesystem.us"</string>
+	<string name="welcome_link_url">"http://telesystem.us"</string>
 	<string name="share_api_link"></string>
     
     <!-- Flags to setup the authentication methods available in the app -->
