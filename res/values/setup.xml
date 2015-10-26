@@ -9,7 +9,7 @@
     <string name ="data_folder">sharedrive</string>
     <string name ="log_name">ShareDrive</string>
     <string name ="default_display_name_for_root_folder">Share Drive</string>
-    <string name ="user_agent">Mozilla/5.0 (Android) telesystem-sharedrive/%1$s</string>
+    <string name ="user_agent">Mozilla/5.0 (Android) telesystem-sharedrive-android/%1$s</string>
     
     <!-- URLs and flags related -->
     <string name="server_url">https://sharedrive.mytelesystem.com</string>
