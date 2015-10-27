@@ -23,9 +23,6 @@
 
 package com.owncloud.android.authentication;
 
-import java.security.cert.X509Certificate;
-import java.util.Map;
-
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.app.Dialog;
@@ -42,6 +39,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.preference.PreferenceManager;
+import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
@@ -53,7 +51,6 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnFocusChangeListener;
 import android.view.View.OnTouchListener;
-import android.view.Window;
 import android.view.inputmethod.EditorInfo;
 import android.webkit.HttpAuthHandler;
 import android.webkit.SslErrorHandler;
@@ -65,7 +62,6 @@ import android.widget.TextView;
 import android.widget.TextView.OnEditorActionListener;
 import android.widget.Toast;
 
-import com.actionbarsherlock.app.SherlockDialogFragment;
 import com.owncloud.android.MainApp;
 import com.owncloud.android.R;
 import com.owncloud.android.authentication.SsoWebViewClient.SsoWebViewClientListener;
@@ -93,6 +89,9 @@ import com.owncloud.android.ui.dialog.SamlWebViewDialog;
 import com.owncloud.android.ui.dialog.SslUntrustedCertDialog;
 import com.owncloud.android.ui.dialog.SslUntrustedCertDialog.OnSslUntrustedCertListener;
 import com.owncloud.android.utils.DisplayUtils;
+
+import java.security.cert.X509Certificate;
+import java.util.Map;
 
 /**
  * This Activity is used to add an ownCloud account to the App
@@ -177,6 +176,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
     private EditText mUsernameInput;
     private EditText mPasswordInput;
     private View mOkButton;
+    private View mCenteredRefreshButton;
     private TextView mAuthStatusView;
 
     private int mAuthStatusText = 0, mAuthStatusIcon = 0;
@@ -189,8 +189,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
     /// Identifier of operation in progress which result shouldn't be lost 
     private long mWaitingForOpId = Long.MAX_VALUE;
 
-    private final String BASIC_TOKEN_TYPE = AccountTypeUtils.getAuthTokenTypePass(MainApp.getAccountType());
-    private final String OAUTH_TOKEN_TYPE = AccountTypeUtils.getAuthTokenTypeAccessToken(MainApp.getAccountType());
+    private final String BASIC_TOKEN_TYPE = AccountTypeUtils.getAuthTokenTypePass(
+            MainApp.getAccountType());
+    private final String OAUTH_TOKEN_TYPE = AccountTypeUtils.getAuthTokenTypeAccessToken(
+            MainApp.getAccountType());
     private final String SAML_TOKEN_TYPE =
             AccountTypeUtils.getAuthTokenTypeSamlSessionCookie(MainApp.getAccountType());
 
@@ -204,7 +206,16 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
     protected void onCreate(Bundle savedInstanceState) {
         //Log_OC.wtf(TAG,  "onCreate init");
         super.onCreate(savedInstanceState);
-        getWindow().requestFeature(Window.FEATURE_NO_TITLE);
+
+        // Workaround, for fixing a problem with Android Library Suppor v7 19
+        //getWindow().requestFeature(Window.FEATURE_NO_TITLE);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().hide();
+
+            getSupportActionBar().setDisplayHomeAsUpEnabled(false);
+            getSupportActionBar().setDisplayShowHomeEnabled(false);
+            getSupportActionBar().setDisplayShowTitleEnabled(false);
+        }
 
         mIsFirstAuthAttempt = true;
 
@@ -240,6 +251,24 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
         
         /// initialize general UI elements
         initOverallUi();
+
+        mOkButton = findViewById(R.id.buttonOK);
+        mOkButton.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                onOkClick();
+            }
+        });
+
+        mCenteredRefreshButton = findViewById(R.id.centeredRefreshButton);
+        mCenteredRefreshButton.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                checkOcServer();
+            }
+        });
         
         mOkButton = findViewById(R.id.buttonOK);
 
@@ -337,11 +366,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
             if (mAccount != null) {
                 mServerInfo.mBaseUrl = mAccountMgr.getUserData(mAccount, Constants.KEY_OC_BASE_URL);
                 // TODO do next in a setter for mBaseUrl
-                mServerInfo.mIsSslConn = mServerInfo.mBaseUrl.startsWith("https://");   
-                String ocVersion = mAccountMgr.getUserData(mAccount, Constants.KEY_OC_VERSION);
-                if (ocVersion != null) {
-                    mServerInfo.mVersion = new OwnCloudVersion(ocVersion);
-                }
+                mServerInfo.mIsSslConn = mServerInfo.mBaseUrl.startsWith("https://");
+                mServerInfo.mVersion = AccountUtils.getServerVersion(mAccount);
             } else {
                 mServerInfo.mBaseUrl = getString(R.string.server_url).trim();
                 mServerInfo.mIsSslConn = mServerInfo.mBaseUrl.startsWith("https://");
@@ -380,7 +406,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
             findViewById(R.id.hostUrlFrame).setVisibility(View.GONE);
             mRefreshButton = findViewById(R.id.centeredRefreshButton);
         }
-        showRefreshButton(mServerIsChecked && !mServerIsValid && 
+        showRefreshButton(mServerIsChecked && !mServerIsValid &&
                 mWaitingForOpId > Integer.MAX_VALUE);
         mServerStatusView = (TextView) findViewById(R.id.server_status_text);
         showServerStatus();
@@ -559,7 +585,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
      * intended to defer the processing of the redirection caught in 
      * {@link #onNewIntent(Intent)} until {@link #onResume()} 
      * 
-     * See {@link #onSaveInstanceState(Bundle)}
+     * See {@link super#onSaveInstanceState(Bundle)}
      */
     @Override
     protected void onSaveInstanceState(Bundle outState) {
@@ -773,10 +799,11 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
         mOkButton.setEnabled(false);
         mServerInfo = new GetServerInfoOperation.ServerInfo();
         showRefreshButton(false);
-        
+
         if (uri.length() != 0) {
             // Handle internationalized domain names
             uri = DisplayUtils.convertIdn(uri, true);
+
             mServerStatusText = R.string.auth_testing_connection;
             mServerStatusIcon = R.drawable.progress_small;
             showServerStatus();
@@ -784,7 +811,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
             Intent getServerInfoIntent = new Intent();
             getServerInfoIntent.setAction(OperationsService.ACTION_GET_SERVER_INFO);
             getServerInfoIntent.putExtra(
-                OperationsService.EXTRA_SERVER_URL, 
+                OperationsService.EXTRA_SERVER_URL,
                 normalizeUrlSuffix(uri)
             );
             if (mOperationsServiceBinder != null) {
@@ -862,10 +889,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
      * is postponed until it is available.
      * 
      * IMPORTANT ENTRY POINT 4
-     * 
-     * @param view      OK button
      */
-    public void onOkClick(View view) {
+    public void onOkClick() {
         // this check should be unnecessary
         if (mServerInfo.mVersion == null || 
                 !mServerInfo.mVersion.isVersionValid()  || 
@@ -907,7 +932,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
         dialog.show(getSupportFragmentManager(), WAIT_DIALOG_TAG);
 
         /// validate credentials accessing the root folder
-        OwnCloudCredentials credentials = OwnCloudCredentialsFactory.newBasicCredentials(username, password);
+        OwnCloudCredentials credentials = OwnCloudCredentialsFactory.newBasicCredentials(username,
+                password);
         accessRootFolder(credentials);
     }
 
@@ -998,7 +1024,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
 
             if ( mAction == ACTION_CREATE) {
                 mUsernameInput.setText(username);
-                success = createAccount();
+                success = createAccount(result);
             } else {
 
                 if (!mUsernameInput.getText().toString().equals(username)) {
@@ -1015,7 +1041,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
 
                     } catch (AccountNotFoundException e) {
                         Log_OC.e(TAG, "Account " + mAccount + " was removed!", e);
-                        Toast.makeText(this, R.string.auth_account_does_not_exist, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, R.string.auth_account_does_not_exist,
+                                Toast.LENGTH_SHORT).show();
                         finish();
                     }
                 }
@@ -1101,7 +1128,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
                     url = "http://" + url;
                 }
             }
-        
+
             url = normalizeUrlSuffix(url);
         }
         return (url != null ? url : "");
@@ -1119,14 +1146,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
 
     // TODO remove, if possible
     private String trimUrlWebdav(String url){       
-        if(url.toLowerCase().endsWith(AccountUtils.WEBDAV_PATH_4_0)){
-            url = url.substring(0, url.length() - AccountUtils.WEBDAV_PATH_4_0.length());             
-        } else if(url.toLowerCase().endsWith(AccountUtils.WEBDAV_PATH_2_0)){
-            url = url.substring(0, url.length() - AccountUtils.WEBDAV_PATH_2_0.length());             
-        } else if (url.toLowerCase().endsWith(AccountUtils.WEBDAV_PATH_1_2)){
-            url = url.substring(0, url.length() - AccountUtils.WEBDAV_PATH_1_2.length());             
-        } 
-        return (url != null ? url : "");
+        if(url.toLowerCase().endsWith(AccountUtils.WEBDAV_PATH_4_0_AND_LATER)){
+            url = url.substring(0, url.length() - AccountUtils.WEBDAV_PATH_4_0_AND_LATER.length());
+        }
+        return url;
     }
 
 
@@ -1140,7 +1163,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
 
         switch (result.getCode()) {
         case OK_SSL:
-            mServerStatusIcon = android.R.drawable.ic_secure;
+            mServerStatusIcon = R.drawable.ic_lock;
             mServerStatusText = R.string.auth_secure_connection;
             break;
 
@@ -1151,7 +1174,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
                 mServerStatusIcon = R.drawable.ic_ok;
             } else {
                 mServerStatusText = R.string.auth_nossl_plain_ok_title;
-                mServerStatusIcon = android.R.drawable.ic_partial_secure;
+                mServerStatusIcon = R.drawable.ic_lock_open;
             }
             break;
 
@@ -1201,7 +1224,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
             mServerStatusText = R.string.auth_unknown_error_title;
             break;
         case OK_REDIRECT_TO_NON_SECURE_CONNECTION:
-            mServerStatusIcon = android.R.drawable.ic_partial_secure;
+            mServerStatusIcon = R.drawable.ic_lock_open;
             mServerStatusText = R.string.auth_redirect_non_secure_connection_title;
             break;
         default:
@@ -1221,7 +1244,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
 
         switch (result.getCode()) {
         case OK_SSL:
-            mAuthStatusIcon = android.R.drawable.ic_secure;
+            mAuthStatusIcon = R.drawable.ic_lock;
             mAuthStatusText = R.string.auth_secure_connection;
             break;
 
@@ -1232,7 +1255,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
                 mAuthStatusIcon = R.drawable.ic_ok;
             } else {
                 mAuthStatusText = R.string.auth_nossl_plain_ok_title;
-                mAuthStatusIcon = android.R.drawable.ic_partial_secure;
+                mAuthStatusIcon = R.drawable.ic_lock_open;
             }
             break;
 
@@ -1327,7 +1350,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
             Log_OC.d(TAG, "Got ACCESS TOKEN: " + mAuthToken);
 
             /// validate token accessing to root folder / getting session
-            OwnCloudCredentials credentials = OwnCloudCredentialsFactory.newBearerCredentials(mAuthToken);
+            OwnCloudCredentials credentials = OwnCloudCredentialsFactory.newBearerCredentials(
+                    mAuthToken);
             accessRootFolder(credentials);
 
         } else {
@@ -1349,13 +1373,15 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
     public void onAuthenticatorTaskCallback(RemoteOperationResult result) {
         mWaitingForOpId = Long.MAX_VALUE;
         dismissDialog(WAIT_DIALOG_TAG);
+        mAsyncTask = null;
 
         if (result.isSuccess()) {
             Log_OC.d(TAG, "Successful access - time to save the account");
 
             boolean success = false;
+
             if (mAction == ACTION_CREATE) {
-                success = createAccount();
+                success = createAccount(result);
 
             } else {
                 try {
@@ -1364,7 +1390,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
 
                 } catch (AccountNotFoundException e) {
                     Log_OC.e(TAG, "Account " + mAccount + " was removed!", e);
-                    Toast.makeText(this, R.string.auth_account_does_not_exist, Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, R.string.auth_account_does_not_exist,
+                            Toast.LENGTH_SHORT).show();
                     finish();
                 }
             }
@@ -1422,7 +1449,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
         response.putString(AccountManager.KEY_ACCOUNT_TYPE, mAccount.type);
 
         if (AccountTypeUtils.getAuthTokenTypeAccessToken(MainApp.getAccountType()).
-                equals(mAuthTokenType)) { 
+                equals(mAuthTokenType)) {
             response.putString(AccountManager.KEY_AUTHTOKEN, mAuthToken);
             // the next line is necessary, notifications are calling directly to the 
             // AuthenticatorActivity to update, without AccountManager intervention
@@ -1452,12 +1479,17 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
      * 
      * TODO Decide how to name the OAuth accounts
      */
-    private boolean createAccount() {
+    private boolean createAccount(RemoteOperationResult authResult) {
         /// create and save new ownCloud account
         boolean isOAuth = AccountTypeUtils.
                 getAuthTokenTypeAccessToken(MainApp.getAccountType()).equals(mAuthTokenType);
         boolean isSaml =  AccountTypeUtils.
                 getAuthTokenTypeSamlSessionCookie(MainApp.getAccountType()).equals(mAuthTokenType);
+
+        String lastPermanentLocation = authResult.getLastPermanentLocation();
+        if (lastPermanentLocation != null) {
+            mServerInfo.mBaseUrl = AccountUtils.trimWebdavSuffix(lastPermanentLocation);
+        }
 
         Uri uri = Uri.parse(mServerInfo.mBaseUrl);
         String username = mUsernameInput.getText().toString().trim();
@@ -1487,6 +1519,13 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
                 );
             }
 
+            // include account version with the new account
+            mAccountMgr.setUserData(
+                mAccount,
+                Constants.KEY_OC_ACCOUNT_VERSION,
+                Integer.toString(AccountUtils.ACCOUNT_VERSION)
+            );
+
             /// add the new account as default in preferences, if there is none already
             Account defaultAccount = AccountUtils.getCurrentOwnCloudAccount(this);
             if (defaultAccount == null) {
@@ -1509,7 +1548,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
             /// add user data to the new account; TODO probably can be done in the last parameter 
             //      addAccountExplicitly, or in KEY_USERDATA
             mAccountMgr.setUserData(
-                    mAccount, Constants.KEY_OC_VERSION,    mServerInfo.mVersion.getVersion()
+                    mAccount, Constants.KEY_OC_VERSION, mServerInfo.mVersion.getVersion()
             );
             mAccountMgr.setUserData(
                     mAccount, Constants.KEY_OC_BASE_URL,   mServerInfo.mBaseUrl
@@ -1692,7 +1731,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
     }
 
 
-    private void getRemoteUserNameOperation(String sessionCookie, boolean followRedirects) {
+    private void getRemoteUserNameOperation(String sessionCookie) {
         
         Intent getUserNameIntent = new Intent();
         getUserNameIntent.setAction(OperationsService.ACTION_GET_USER_NAME);
@@ -1710,10 +1749,10 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
         if (sessionCookie != null && sessionCookie.length() > 0) {
             Log_OC.d(TAG, "Successful SSO - time to save the account");
             mAuthToken = sessionCookie;
-            getRemoteUserNameOperation(sessionCookie, true);
+            getRemoteUserNameOperation(sessionCookie);
             Fragment fd = getSupportFragmentManager().findFragmentByTag(SAML_DIALOG_TAG);
-            if (fd != null && fd instanceof SherlockDialogFragment) {
-                Dialog d = ((SherlockDialogFragment)fd).getDialog();
+            if (fd != null && fd instanceof DialogFragment) {
+                Dialog d = ((DialogFragment)fd).getDialog();
                 if (d != null && d.isShowing()) {
                     d.dismiss();
                 }
@@ -1744,7 +1783,7 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
             X509Certificate x509Certificate, SslError error, SslErrorHandler handler
         ) {
         // Show a dialog with the certificate info
-        SslUntrustedCertDialog dialog = null;
+        SslUntrustedCertDialog dialog;
         if (x509Certificate == null) {
             dialog = SslUntrustedCertDialog.newInstanceForEmptySslError(error, handler);
         } else {
@@ -1815,8 +1854,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
     
     private void dismissDialog(String dialogTag){
         Fragment frag = getSupportFragmentManager().findFragmentByTag(dialogTag);
-        if (frag != null && frag instanceof SherlockDialogFragment) {
-            SherlockDialogFragment dialog = (SherlockDialogFragment) frag;
+        if (frag != null && frag instanceof DialogFragment) {
+            DialogFragment dialog = (DialogFragment) frag;
             dialog.dismiss();
         }
     }
@@ -1836,8 +1875,6 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
                 
                 doOnResumeAndBound();
                 
-            } else {
-                return;
             }
             
         }
@@ -1856,8 +1893,8 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
 
     /**
      * Create and show dialog for request authentication to the user
-     * @param webView
-     * @param handler
+     * @param webView   Web view to emebd into the authentication dialog.
+     * @param handler   Object responsible for catching and recovering HTTP authentication fails.
      */
     public void createAuthenticationDialog(WebView webView, HttpAuthHandler handler) {
 
@@ -1887,6 +1924,5 @@ public class AuthenticatorActivity extends AccountAuthenticatorActivity
     public void doNegativeAuthenticatioDialogClick(){
         mIsFirstAuthAttempt = true;
     }
-
 
 }

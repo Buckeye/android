@@ -39,6 +39,8 @@ import com.owncloud.android.ui.dialog.ConfirmationDialogFragment.ConfirmationDia
 public class RemoveFileDialogFragment extends ConfirmationDialogFragment 
 implements ConfirmationDialogFragmentListener {
 
+    private OCFile mTargetFile;
+
     private static final String ARG_TARGET_FILE = "TARGET_FILE";
 
     /**
@@ -54,29 +56,26 @@ implements ConfirmationDialogFragmentListener {
         int messageStringId = R.string.confirmation_remove_alert;
         
         int posBtn = R.string.confirmation_remove_remote;
-        int neuBtn = -1;
+        int negBtn = -1;
         if (file.isFolder()) {
             messageStringId = R.string.confirmation_remove_folder_alert;
             posBtn = R.string.confirmation_remove_remote_and_local;
-            neuBtn = R.string.confirmation_remove_folder_local;
+            negBtn = R.string.confirmation_remove_local;
         } else if (file.isDown()) {
             posBtn = R.string.confirmation_remove_remote_and_local;
-            neuBtn = R.string.confirmation_remove_local;
+            negBtn = R.string.confirmation_remove_local;
         }
-        
         
         args.putInt(ARG_CONF_RESOURCE_ID, messageStringId);
         args.putStringArray(ARG_CONF_ARGUMENTS, new String[]{file.getFileName()});
         args.putInt(ARG_POSITIVE_BTN_RES, posBtn);
-        args.putInt(ARG_NEUTRAL_BTN_RES, neuBtn);
-        args.putInt(ARG_NEGATIVE_BTN_RES, R.string.common_cancel);
+        args.putInt(ARG_NEUTRAL_BTN_RES, R.string.common_no);
+        args.putInt(ARG_NEGATIVE_BTN_RES, negBtn);
         args.putParcelable(ARG_TARGET_FILE, file);
         frag.setArguments(args);
         
         return frag;
     }
-
-    private OCFile mTargetFile;
     
     @Override
     public Dialog onCreateDialog(Bundle savedInstanceState) {
@@ -93,7 +92,7 @@ implements ConfirmationDialogFragmentListener {
      */
     @Override
     public void onConfirmation(String callerTag) {
-        ComponentsGetter cg = (ComponentsGetter)getSherlockActivity();
+        ComponentsGetter cg = (ComponentsGetter)getActivity();
         FileDataStorageManager storageManager = cg.getStorageManager();
         if (storageManager.getFileById(mTargetFile.getFileId()) != null) {
             cg.getFileOperationsHelper().removeFile(mTargetFile, false);
@@ -104,26 +103,27 @@ implements ConfirmationDialogFragmentListener {
      * Performs the removal of the local copy of the target file
      */
     @Override
-    public void onNeutral(String callerTag) {
-        ComponentsGetter cg = (ComponentsGetter)getSherlockActivity();
+    public void onCancel(String callerTag) {
+        ComponentsGetter cg = (ComponentsGetter)getActivity();
         cg.getFileOperationsHelper().removeFile(mTargetFile, true);
         
         FileDataStorageManager storageManager = cg.getStorageManager();
         
-        boolean containsKeepInSync = false;
+        boolean containsFavorite = false;
         if (mTargetFile.isFolder()) {
-            Vector<OCFile> files = storageManager.getFolderContent(mTargetFile);
+            // TODO Enable when "On Device" is recovered ?
+            Vector<OCFile> files = storageManager.getFolderContent(mTargetFile/*, false*/);
             for(OCFile file: files) {
-                containsKeepInSync = file.keepInSync() || containsKeepInSync;
+                containsFavorite = file.isFavorite() || containsFavorite;
 
-                if (containsKeepInSync)
+                if (containsFavorite)
                     break;
             }
         }
 
-        // Remove etag for parent, if file is a keep_in_sync 
-        // or is a folder and contains keep_in_sync        
-        if (mTargetFile.keepInSync() || containsKeepInSync) {
+        // Remove etag for parent, if file is a favorite
+        // or is a folder and contains favorite
+        if (mTargetFile.isFavorite() || containsFavorite) {
             OCFile folder = null;
             if (mTargetFile.isFolder()) {
                 folder = mTargetFile;
@@ -137,8 +137,7 @@ implements ConfirmationDialogFragmentListener {
     }
 
     @Override
-    public void onCancel(String callerTag) {
+    public void onNeutral(String callerTag) {
         // nothing to do here
     }
-    
 }

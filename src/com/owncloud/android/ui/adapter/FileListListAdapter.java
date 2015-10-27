@@ -4,6 +4,7 @@
  *   @author Bartek Przybylski
  *   @author Tobias Kaminsky
  *   @author David A. Velasco
+ *   @author masensio
  *   Copyright (C) 2011  Bartek Przybylski
  *   Copyright (C) 2015 ownCloud Inc.
  *
@@ -54,6 +55,7 @@ import com.owncloud.android.services.OperationsService.OperationsServiceBinder;
 import com.owncloud.android.ui.activity.ComponentsGetter;
 import com.owncloud.android.utils.DisplayUtils;
 import com.owncloud.android.utils.FileStorageUtils;
+import com.owncloud.android.utils.MimetypeIconUtil;
 
 
 /**
@@ -158,17 +160,22 @@ public class FileListListAdapter extends BaseAdapter implements ListAdapter {
             viewType = ViewType.GRID_ITEM;
         }
 
-        // Create View
-        switch (viewType){
-            case GRID_IMAGE:
-                view = inflator.inflate(R.layout.grid_image, null);
-                break;
-            case GRID_ITEM:
-                view = inflator.inflate(R.layout.grid_item, null);
-                break;
-            case LIST_ITEM:
-                view = inflator.inflate(R.layout.list_item, null);
-                break;
+        // create view only if differs, otherwise reuse
+        if (convertView == null || (convertView != null && convertView.getTag() != viewType)) {
+            switch (viewType) {
+                case GRID_IMAGE:
+                    view = inflator.inflate(R.layout.grid_image, null);
+                    view.setTag(ViewType.GRID_IMAGE);
+                    break;
+                case GRID_ITEM:
+                    view = inflator.inflate(R.layout.grid_item, null);
+                    view.setTag(ViewType.GRID_ITEM);
+                    break;
+                case LIST_ITEM:
+                    view = inflator.inflate(R.layout.list_item, null);
+                    view.setTag(ViewType.LIST_ITEM);
+                    break;
+            }
         }
 
         view.invalidate();
@@ -263,15 +270,14 @@ public class FileListListAdapter extends BaseAdapter implements ListAdapter {
                     }
 
                     // share with me icon
-                    if (!file.isFolder()) {
-                        ImageView sharedWithMeIconV = (ImageView)
-                                view.findViewById(R.id.sharedWithMeIcon);
-                        sharedWithMeIconV.bringToFront();
-                        if (checkIfFileIsSharedWithMe(file)) {
-                            sharedWithMeIconV.setVisibility(View.VISIBLE);
-                        } else {
-                            sharedWithMeIconV.setVisibility(View.GONE);
-                        }
+                    ImageView sharedWithMeIconV = (ImageView)
+                            view.findViewById(R.id.sharedWithMeIcon);
+                    sharedWithMeIconV.bringToFront();
+                    if (checkIfFileIsSharedWithMe(file) &&
+                            (!file.isFolder() || !mGridMode)) {
+                        sharedWithMeIconV.setVisibility(View.VISIBLE);
+                    } else {
+                        sharedWithMeIconV.setVisibility(View.GONE);
                     }
 
                     break;
@@ -281,7 +287,7 @@ public class FileListListAdapter extends BaseAdapter implements ListAdapter {
             
             // this if-else is needed even though favorite icon is visible by default
             // because android reuses views in listview
-            if (!file.keepInSync()) {
+            if (!file.isFavorite()) {
                 view.findViewById(R.id.favoriteIcon).setVisibility(View.GONE);
             } else {
                 view.findViewById(R.id.favoriteIcon).setVisibility(View.VISIBLE);
@@ -316,24 +322,23 @@ public class FileListListAdapter extends BaseAdapter implements ListAdapter {
                             task.execute(file);
                         }
                     }
+
+                    if (file.getMimetype().equalsIgnoreCase("image/png")) {
+                        fileIcon.setBackgroundColor(mContext.getResources()
+                                .getColor(R.color.background_color));
+                    }
+
+
                 } else {
-                    fileIcon.setImageResource(DisplayUtils.getFileTypeIconId(file.getMimetype(),
+                    fileIcon.setImageResource(MimetypeIconUtil.getFileTypeIconId(file.getMimetype(),
                             file.getFileName()));
                 }
 
             } else {
                 // Folder
-                if (checkIfFileIsSharedWithMe(file)) {
-                    fileIcon.setImageResource(R.drawable.shared_with_me_folder);
-                } else if (file.isShareByLink()) {
-                    // If folder is sharedByLink, icon folder must be changed to
-                    // folder-public one
-                    fileIcon.setImageResource(R.drawable.folder_public);
-                } else {
-                    fileIcon.setImageResource(
-                            DisplayUtils.getFileTypeIconId(file.getMimetype(), file.getFileName())
-                    );
-                }
+                fileIcon.setImageResource(
+                        MimetypeIconUtil.getFolderTypeIconId(
+                                checkIfFileIsSharedWithMe(file), file.isShareByLink()));
             }
         }
 
@@ -402,14 +407,16 @@ public class FileListListAdapter extends BaseAdapter implements ListAdapter {
      * @param updatedStorageManager     Optional updated storage manager; used to replace 
      *                                  mStorageManager if is different (and not NULL)
      */
-    public void swapDirectory(OCFile directory, FileDataStorageManager updatedStorageManager) {
+    public void swapDirectory(OCFile directory, FileDataStorageManager updatedStorageManager
+            /*, boolean onlyOnDevice*/) {
         mFile = directory;
         if (updatedStorageManager != null && updatedStorageManager != mStorageManager) {
             mStorageManager = updatedStorageManager;
             mAccount = AccountUtils.getCurrentOwnCloudAccount(mContext);
         }
         if (mStorageManager != null) {
-            mFiles = mStorageManager.getFolderContent(mFile);
+            // TODO Enable when "On Device" is recovered ?
+            mFiles = mStorageManager.getFolderContent(mFile/*, onlyOnDevice*/);
             mFilesOrig.clear();
             mFilesOrig.addAll(mFiles);
             
